@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Daily</string>
+    <!-- Web OAuth client ID from Google Cloud (same as GOOGLE_CLIENT_ID on Vercel). Leave empty to disable Google sign-in. -->
+    <string name="google_web_client_id" translatable="false"></string>
+</resources>
