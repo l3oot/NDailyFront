@@ -27,6 +27,8 @@ class AppStore(app: Application) {
     private val clearToast = Runnable { update { copy(toast = "") } }
     private val _state = MutableStateFlow(loadLocal())
     val state: StateFlow<AppUiState> = _state.asStateFlow()
+    private val _googleTicket = MutableStateFlow("")
+    val googleTicket: StateFlow<String> = _googleTicket.asStateFlow()
 
     fun t(key: String) = LocalStringsHolder.t(_state.value.locale, key)
 
@@ -84,13 +86,23 @@ class AppStore(app: Application) {
         return acceptSession(res, email)
     }
 
-    suspend fun signInWithGoogle(idToken: String): String? {
+    fun submitGoogleTicket(ticket: String) {
+        if (ticket.isNotBlank()) _googleTicket.value = ticket
+    }
+
+    fun clearGoogleTicket() {
+        _googleTicket.value = ""
+    }
+
+    suspend fun exchangeGoogleTicket(ticket: String): String? {
         val res = api.post(
-            "/api/v1/auth/google",
-            JSONObject().put("idToken", idToken),
+            "/api/v1/auth/google/exchange",
+            JSONObject().put("ticket", ticket),
             auth = false,
         )
-        return acceptSession(res)
+        val error = acceptSession(res)
+        if (error != null) toast(error)
+        return error
     }
 
     fun signOut() {

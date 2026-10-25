@@ -1,6 +1,7 @@
 package com.ndaily.mobile
 
 import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.ndaily.mobile.data.AppStore
 import com.ndaily.mobile.data.LocationTracker
 import com.ndaily.mobile.ui.nav.AppNav
 import com.ndaily.mobile.ui.theme.DailyTheme
@@ -24,6 +26,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = (application as DailyApp).store
+        handleGoogleIntent(intent, store)
         tracker = LocationTracker(this) { point, denied -> store.setGps(point, denied) }
         enableEdgeToEdge()
         setContent {
@@ -42,6 +45,23 @@ class MainActivity : ComponentActivity() {
                 ),
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleGoogleIntent(intent, (application as DailyApp).store)
+    }
+
+    private fun handleGoogleIntent(intent: Intent?, store: AppStore) {
+        val data = intent?.data ?: return
+        if (data.scheme != "ndaily" || data.host != "auth" || data.path != "/google") return
+        val ticket = data.getQueryParameter("ticket").orEmpty()
+        val error = data.getQueryParameter("error").orEmpty()
+        if (ticket.isNotBlank()) store.submitGoogleTicket(ticket)
+        else if (error == "missing") store.toast(store.t("googleNotConfigured"))
+        else if (error.isNotBlank()) store.toast(store.t("googleSignInFailed"))
+        intent.data = null
     }
 
     override fun onResume() {

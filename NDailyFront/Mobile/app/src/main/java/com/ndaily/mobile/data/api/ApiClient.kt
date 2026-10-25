@@ -124,6 +124,7 @@ class ApiClient(private val tokens: TokenStore) {
         private val SKIP_REFRESH = setOf(
             "/api/v1/auth/login",
             "/api/v1/auth/google",
+            "/api/v1/auth/google/exchange",
             "/api/v1/auth/register",
             "/api/v1/auth/dev-login",
             "/api/v1/auth/send-otp",

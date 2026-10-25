@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -47,8 +48,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
 import com.ndaily.mobile.R
 import com.ndaily.mobile.data.AppStore
+import com.ndaily.mobile.data.api.ApiClient
 import com.ndaily.mobile.data.AppUiState
 import com.ndaily.mobile.data.isValidEmail
 import com.ndaily.mobile.ui.components.Chevron
@@ -97,6 +101,7 @@ fun WelcomeScreen(
     var busy by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Box(Modifier.fillMaxSize().background(WelcomeBg).imePadding()) {
         Image(
@@ -266,7 +271,8 @@ fun WelcomeScreen(
                 }
                 Spacer(Modifier.height(16.dp))
                 SocialRow(R.drawable.ic_google, t("loginWithGoogle")) {
-                    dialog = t("loginWithGoogle") to t("googleNotConfigured")
+                    val url = "${ApiClient.BASE_URL}/api/v1/auth/google/start?client=android"
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 }
                 Spacer(Modifier.height(12.dp))
                 SocialRow(null, t("welcomeLine"), line = true) {

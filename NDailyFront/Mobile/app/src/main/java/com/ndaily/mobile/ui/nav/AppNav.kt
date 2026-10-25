@@ -11,6 +11,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +56,18 @@ fun AppNav(store: AppStore, state: AppUiState) {
     val nav = rememberNavController()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route.orEmpty()
     val t = { key: String -> store.t(key) }
+    val googleTicket by store.googleTicket.collectAsState()
+    var handledGoogle by remember { mutableStateOf("") }
+    LaunchedEffect(googleTicket) {
+        val ticket = googleTicket
+        if (ticket.isBlank() || ticket == handledGoogle) return@LaunchedEffect
+        handledGoogle = ticket
+        store.clearGoogleTicket()
+        val error = store.exchangeGoogleTicket(ticket)
+        if (error == null) {
+            nav.navigate("home") { popUpTo(0) { inclusive = true } }
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         NavHost(navController = nav, startDestination = "splash") {
