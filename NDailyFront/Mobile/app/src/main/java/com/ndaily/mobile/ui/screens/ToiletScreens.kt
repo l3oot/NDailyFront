@@ -240,19 +240,13 @@ private fun ToiletBrowse(
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().background(ToiletBg).statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             PageBack(onBack)
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(t("toiletMapTitle"), fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(t("bentoRestroomSubtitle"), fontFamily = PromptFamily, fontSize = 12.sp, color = Muted)
-            }
-            Row(
-                Modifier.clip(CircleShape).background(Color.White).shadow(2.dp, CircleShape).clickable(onClick = onAdd).padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.Add, contentDescription = null, tint = PrimaryAlt, modifier = Modifier.size(16.dp))
-                Text(t("toiletAddAction"), modifier = Modifier.padding(start = 4.dp), fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = PrimaryAlt)
-            }
+            Spacer(Modifier.weight(1f))
+            ToiletPill(t("toiletAddAction"), Icons.Outlined.Add, onAdd)
         }
         Row(
             Modifier.padding(horizontal = 16.dp, vertical = 8.dp).height(44.dp).clip(RoundedCornerShape(16.dp)).border(1.dp, Color(0xFFE6EAF0), RoundedCornerShape(16.dp)).background(Color.White).padding(horizontal = 12.dp),
@@ -325,13 +319,12 @@ private fun ToiletBrowse(
                 recenterToken = recenterToken,
                 onToiletClick = onOpen,
             )
-            Row(
-                Modifier.align(Alignment.TopCenter).padding(top = 12.dp).clip(CircleShape).background(Color.White).shadow(4.dp, CircleShape).clickable(onClick = onRecenter).padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = PrimaryAlt, modifier = Modifier.size(13.dp))
-                Text(t("toiletSearchArea"), modifier = Modifier.padding(start = 6.dp), fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = PrimaryAlt)
-            }
+            ToiletPill(
+                t("toiletSearchArea"),
+                Icons.Outlined.Refresh,
+                onRecenter,
+                Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+            )
             Box(
                 Modifier.align(Alignment.BottomEnd).padding(12.dp).size(40.dp).shadow(4.dp, CircleShape).clip(CircleShape).background(Color.White).clickable(onClick = onRecenter),
                 contentAlignment = Alignment.Center,
@@ -359,6 +352,28 @@ private fun ToiletBrowse(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ToiletPill(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .clip(CircleShape)
+            .background(Color.White)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Color(0xFF3C3C43), modifier = Modifier.size(15.dp))
+        Text(
+            label,
+            modifier = Modifier.padding(start = 6.dp),
+            fontFamily = PromptFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            color = Color(0xFF3C3C43),
+        )
     }
 }
 

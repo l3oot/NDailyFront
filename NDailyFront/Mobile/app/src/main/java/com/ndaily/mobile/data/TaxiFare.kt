@@ -1,5 +1,7 @@
 package com.ndaily.mobile.data
 
+import kotlin.math.round
+
 object TaxiFare {
     fun compute(
         distanceKm: Double,
@@ -53,5 +55,26 @@ object TaxiFare {
         return lines to subtotal
     }
 
+    fun estimateBand(distanceKm: Double): TaxiFareBand {
+        val base = compute(distanceKm).distanceSubtotal
+        val low = round10(base)
+        val high = round10(maxOf(base * 1.35, base + 30.0))
+        return TaxiFareBand(
+            taxiLow = low,
+            taxiHigh = high,
+            otherLow = round10(low * 1.25),
+            otherHigh = round10(high * 1.25),
+        )
+    }
+
     fun money(value: Double): String = "%,.2f".format(value)
+
+    private fun round10(value: Double) = (round(value / 10.0) * 10).toInt().coerceAtLeast(0)
 }
+
+data class TaxiFareBand(
+    val taxiLow: Int,
+    val taxiHigh: Int,
+    val otherLow: Int,
+    val otherHigh: Int,
+)

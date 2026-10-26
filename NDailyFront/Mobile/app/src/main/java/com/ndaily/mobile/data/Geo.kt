@@ -10,6 +10,32 @@ import kotlin.math.sqrt
 object Geo {
     val Bangkok = LatLng(13.7563, 100.5018)
 
+    fun decodePolyline(encoded: String): List<LatLng> {
+        if (encoded.isBlank()) return emptyList()
+        val points = mutableListOf<LatLng>()
+        var index = 0
+        var lat = 0
+        var lng = 0
+        fun read(): Int {
+            var shift = 0
+            var result = 0
+            var byte: Int
+            do {
+                if (index >= encoded.length) return 0
+                byte = encoded[index++].code - 63
+                result = result or (byte and 0x1f shl shift)
+                shift += 5
+            } while (byte >= 0x20 && index <= encoded.length)
+            return if (result and 1 != 0) (result shr 1).inv() else result shr 1
+        }
+        while (index < encoded.length) {
+            lat += read()
+            lng += read()
+            points += LatLng(lat / 1e5, lng / 1e5)
+        }
+        return points
+    }
+
     fun haversineKm(a: LatLng, b: LatLng): Double {
         val r = 6371.0
         val dLat = Math.toRadians(b.lat - a.lat)

@@ -3,6 +3,7 @@ package com.ndaily.mobile.ui.map
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
+import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ fun OsmMap(
     toilets: List<ToiletLocation> = emptyList(),
     origin: LatLng? = null,
     path: List<LatLng> = emptyList(),
+    pathColor: Int = 0xFFC33E83.toInt(),
     pin: LatLng? = null,
     onLongPress: ((LatLng) -> Unit)? = null,
     onToiletClick: ((String) -> Unit)? = null,
@@ -45,16 +47,25 @@ fun OsmMap(
     val context = LocalContext.current
     val mapView = remember {
         MapView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            setTilesScaledToDpi(true)
+            isHorizontalMapRepetitionEnabled = true
+            isVerticalMapRepetitionEnabled = false
             minZoomLevel = 5.0
-            maxZoomLevel = 20.0
+            maxZoomLevel = 19.0
             controller.setZoom(14.5)
             controller.setCenter(GeoPoint(Geo.Bangkok.lat, Geo.Bangkok.lng))
+            setBackgroundColor(0xFFE7EEF6.toInt())
         }
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, mapView) {
+        mapView.onResume()
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
@@ -65,6 +76,7 @@ fun OsmMap(
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+            mapView.onPause()
         }
     }
 
@@ -90,7 +102,7 @@ fun OsmMap(
         if (path.size >= 2) {
             val line = Polyline(map)
             line.setPoints(path.map { GeoPoint(it.lat, it.lng) })
-            line.outlinePaint.color = 0xFFC33E83.toInt()
+            line.outlinePaint.color = pathColor
             line.outlinePaint.strokeWidth = 8f
             line.outlinePaint.strokeCap = Paint.Cap.ROUND
             map.overlays += line

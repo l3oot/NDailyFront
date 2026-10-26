@@ -323,7 +323,7 @@ class AppStore(app: Application) {
         return true
     }
 
-    suspend fun drivingKm(origin: LatLng, dest: LatLng): Double? {
+    suspend fun drivingRoute(origin: LatLng, dest: LatLng): DrivingRoute? {
         val res = api.post(
             "/api/v1/ggmap/route",
             JSONObject()
@@ -333,8 +333,17 @@ class AppStore(app: Application) {
                 .put("destLng", dest.lng),
             auth = false,
         )
-        val km = res.obj()?.optDouble("distanceKm", Double.NaN) ?: Double.NaN
-        return if (km.isNaN()) null else km
+        val data = res.obj() ?: return null
+        val km = data.optDouble("distanceKm", Double.NaN)
+        if (km.isNaN()) return null
+        val seconds = if (data.has("durationSeconds") && !data.isNull("durationSeconds")) {
+            data.optInt("durationSeconds").takeIf { it > 0 }
+        } else {
+            null
+        }
+        val encoded = data.optString("encodedPolyline")
+        val path = if (encoded.isBlank()) emptyList() else Geo.decodePolyline(encoded)
+        return DrivingRoute(km, seconds, path)
     }
 
     fun toggleSavedToilet(id: String) {

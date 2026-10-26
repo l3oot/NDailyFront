@@ -97,6 +97,12 @@ data class TaxiFareLine(
     val amountBaht: Double,
 )
 
+data class DrivingRoute(
+    val distanceKm: Double,
+    val durationSeconds: Int? = null,
+    val path: List<LatLng> = emptyList(),
+)
+
 data class TaxiFareResult(
     val distanceLines: List<TaxiFareLine>,
     val distanceSubtotal: Double,

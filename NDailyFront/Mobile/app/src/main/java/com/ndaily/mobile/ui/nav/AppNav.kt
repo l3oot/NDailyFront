@@ -62,11 +62,14 @@ fun AppNav(store: AppStore, state: AppUiState) {
         val ticket = googleTicket
         if (ticket.isBlank() || ticket == handledGoogle) return@LaunchedEffect
         handledGoogle = ticket
-        store.clearGoogleTicket()
         val error = store.exchangeGoogleTicket(ticket)
         if (error == null) {
-            nav.navigate("home") { popUpTo(0) { inclusive = true } }
+            nav.navigate("home") {
+                popUpTo("welcome") { inclusive = true }
+                launchSingleTop = true
+            }
         }
+        store.clearGoogleTicket()
     }
 
     Box(Modifier.fillMaxSize()) {

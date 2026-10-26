@@ -2,7 +2,9 @@ package com.ndaily.mobile
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,11 +18,13 @@ import com.ndaily.mobile.ui.theme.DailyTheme
 
 class MainActivity : ComponentActivity() {
     private lateinit var tracker: LocationTracker
+    private var askedPermission = false
+    private var promptedLocationSettings = false
 
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
-        if (granted.values.any { it }) tracker.start() else (application as DailyApp).store.setGps(null, true)
+        if (granted.values.any { it }) beginTracking() else (application as DailyApp).store.setGps(null, true)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,16 +38,6 @@ class MainActivity : ComponentActivity() {
             DailyTheme {
                 AppNav(store = store, state = state)
             }
-        }
-        if (tracker.hasPermission()) {
-            tracker.start()
-        } else {
-            permission.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                ),
-            )
         }
     }
 
@@ -66,11 +60,55 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::tracker.isInitialized && tracker.hasPermission()) tracker.start()
+        if (!::tracker.isInitialized) return
+        if (tracker.hasPermission()) {
+            beginTracking()
+            return
+        }
+        if (askedPermission) return
+        askedPermission = true
+        window.decorView.post {
+            if (isFinishing || isDestroyed) return@post
+            if (tracker.hasPermission()) {
+                beginTracking()
+                return@post
+            }
+            val prefs = getSharedPreferences("ndaily.frontend", MODE_PRIVATE)
+            val askedBefore = prefs.getBoolean("asked_location", false)
+            val canAskAgain = shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (askedBefore && !canAskAgain) {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", packageName, null)
+                    },
+                )
+                return@post
+            }
+            prefs.edit().putBoolean("asked_location", true).apply()
+            permission.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+            )
+        }
     }
 
     override fun onPause() {
         super.onPause()
         if (::tracker.isInitialized) tracker.stop()
+    }
+
+    private fun beginTracking() {
+        if (!tracker.locationServicesEnabled()) {
+            (application as DailyApp).store.setGps(null, false)
+            if (!promptedLocationSettings) {
+                promptedLocationSettings = true
+                startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            }
+            return
+        }
+        tracker.start()
     }
 }
