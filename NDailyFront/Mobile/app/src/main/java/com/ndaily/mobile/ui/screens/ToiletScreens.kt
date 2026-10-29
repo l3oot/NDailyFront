@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Restaurant
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Storefront
@@ -60,7 +59,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -81,7 +83,10 @@ import com.ndaily.mobile.data.nextOpenHours
 import com.ndaily.mobile.data.starCount
 import com.ndaily.mobile.ui.components.PageBack
 import com.ndaily.mobile.ui.components.PrimaryButton
+import com.ndaily.mobile.ui.components.PlaceSearchField
+import com.ndaily.mobile.ui.components.PlaceSuggestionMenu
 import com.ndaily.mobile.ui.components.rememberPlaceSuggestions
+import com.ndaily.mobile.ui.map.MapPins
 import com.ndaily.mobile.ui.map.OsmMap
 import com.ndaily.mobile.ui.theme.Hint2
 import com.ndaily.mobile.ui.theme.Ink
@@ -238,6 +243,8 @@ private fun ToiletBrowse(
     )
     val suggestions = rememberPlaceSuggestions(store, query)
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var searchHeight by remember { mutableStateOf(72.dp) }
 
     Column(Modifier.fillMaxSize().background(ToiletBg).statusBarsPadding()) {
         Row(
@@ -248,44 +255,9 @@ private fun ToiletBrowse(
             Spacer(Modifier.weight(1f))
             ToiletPill(t("toiletAddAction"), Icons.Outlined.Add, onAdd)
         }
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp).height(44.dp).clip(RoundedCornerShape(16.dp)).border(1.dp, Color(0xFFE6EAF0), RoundedCornerShape(16.dp)).background(Color.White).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Outlined.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(16.dp))
-            BasicTextField(
-                value = query,
-                onValueChange = onQuery,
-                singleLine = true,
-                textStyle = TextStyle(fontFamily = PromptFamily, fontSize = 15.sp, color = Ink),
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                decorationBox = { inner ->
-                    Box {
-                        if (query.isEmpty()) Text(t("toiletSearchHint"), fontFamily = PromptFamily, fontSize = 14.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        inner()
-                    }
-                },
-            )
-            Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = PrimaryAlt, modifier = Modifier.size(16.dp))
-        }
-        if (suggestions.isNotEmpty() && query.length >= 2) {
-            suggestions.take(4).forEach { item ->
-                Text(
-                    item.name,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp).clickable {
-                        scope.launch {
-                            val place = store.pickPlace(item)
-                            val point = if (place != null) LatLng(place.lat, place.lng) else LatLng(item.lat, item.lng)
-                            if (point.lat != 0.0 || point.lng != 0.0) onFocus(point)
-                            onQuery(place?.name ?: item.name)
-                        }
-                    },
-                    fontFamily = PromptFamily,
-                    fontSize = 14.sp,
-                    color = Ink,
-                )
-            }
-        }
+        Box(Modifier.weight(1f)) {
+        Column(Modifier.fillMaxSize()) {
+        Spacer(Modifier.height(searchHeight))
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             placeFilters.forEach { item ->
                 val selected = placeFilter == item.id
@@ -316,6 +288,7 @@ private fun ToiletBrowse(
                 gps = state.gps,
                 toilets = toilets,
                 dest = focus,
+                pins = MapPins.Toilet,
                 recenterToken = recenterToken,
                 onToiletClick = onOpen,
             )
@@ -329,6 +302,35 @@ private fun ToiletBrowse(
                 Modifier.align(Alignment.BottomEnd).padding(12.dp).size(40.dp).shadow(4.dp, CircleShape).clip(CircleShape).background(Color.White).clickable(onClick = onRecenter),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Outlined.MyLocation, contentDescription = t("mapMyLocation"), modifier = Modifier.size(18.dp)) }
+        }
+        }
+        Column(
+            Modifier
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp)
+                .zIndex(2f),
+        ) {
+            PlaceSearchField(
+                value = query,
+                onValueChange = onQuery,
+                placeholder = t("toiletSearchHint"),
+                modifier = Modifier.onGloballyPositioned {
+                    searchHeight = with(density) { it.size.height.toDp() } + 16.dp
+                },
+            )
+            PlaceSuggestionMenu(
+                items = suggestions,
+                onPick = { item ->
+                    scope.launch {
+                        val place = store.pickPlace(item)
+                        val point = if (place != null) LatLng(place.lat, place.lng) else LatLng(item.lat, item.lng)
+                        if (point.lat != 0.0 || point.lng != 0.0) onFocus(point)
+                        onQuery(place?.name ?: item.name)
+                    }
+                },
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
         }
         Column(
             Modifier
@@ -576,7 +578,7 @@ private fun ToiletFormScreen(
             FormField(t("toiletAddress"), draft.addressToilet, required = true, placeholder = t("toiletAddressPlaceholder")) { onChange(draft.copy(addressToilet = it)) }
             Text(t("toiletMapPin") + " *", fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             Box(Modifier.fillMaxWidth().height(176.dp).clip(RoundedCornerShape(24.dp)).border(1.dp, Color(0xFFE6EAF0), RoundedCornerShape(24.dp))) {
-                OsmMap(modifier = Modifier.fillMaxSize(), gps = null, pin = pin, onLongPress = onPin)
+                OsmMap(modifier = Modifier.fillMaxSize(), gps = null, pin = pin, pins = MapPins.Toilet, onLongPress = onPin)
             }
             Text("${t("toiletCoords")}: ${"%.4f".format(pin.lat)}, ${"%.4f".format(pin.lng)} (${t("toiletPinHint")})", fontFamily = PromptFamily, fontSize = 12.sp, color = Muted)
             FormField(t("toiletOpenHours"), draft.openHoursToilet) { onChange(draft.copy(openHoursToilet = nextOpenHours(draft.openHoursToilet, it))) }

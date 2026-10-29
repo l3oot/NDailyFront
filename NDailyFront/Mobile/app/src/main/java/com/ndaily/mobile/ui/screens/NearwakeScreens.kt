@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -26,8 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -94,6 +91,8 @@ import com.ndaily.mobile.data.LatLng
 import com.ndaily.mobile.data.Plans
 import com.ndaily.mobile.data.SavedPlace
 import com.ndaily.mobile.ui.components.PageBack
+import com.ndaily.mobile.ui.components.PlaceSearchField
+import com.ndaily.mobile.ui.components.PlaceSuggestionMenu
 import com.ndaily.mobile.ui.components.rememberPlaceSuggestions
 import com.ndaily.mobile.ui.map.OsmMap
 import com.ndaily.mobile.ui.theme.Green
@@ -174,34 +173,12 @@ fun NearwakeScreen(
         }
         Box(Modifier.padding(top = 16.dp).weight(1f).fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier
-                .onGloballyPositioned { searchHeight = with(density) { it.size.height.toDp() } }
-                .shadow(8.dp, RoundedCornerShape(22.dp))
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color.White)
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = Primary)
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    textStyle = TextStyle(fontFamily = PromptFamily, fontSize = 16.sp, color = Ink),
-                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                    decorationBox = { inner ->
-                        Box {
-                            if (query.isEmpty()) Text(t("nearwakeSearchPlaceholder"), fontFamily = PromptFamily, fontSize = 16.sp, color = Hint2)
-                            inner()
-                        }
-                    },
-                )
-                if (query.isNotEmpty()) {
-                    Icon(Icons.Outlined.Close, contentDescription = null, tint = Hint2, modifier = Modifier.clickable { query = "" }.size(16.dp))
-                }
-            }
-        }
+        PlaceSearchField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = t("nearwakeSearchPlaceholder"),
+            modifier = Modifier.onGloballyPositioned { searchHeight = with(density) { it.size.height.toDp() } },
+        )
         Text(t("nearwakeSearchHint"), modifier = Modifier.padding(start = 16.dp, top = 8.dp), fontFamily = PromptFamily, fontSize = 13.sp, color = Color(0xFFA8B0BA))
         Row(Modifier.padding(top = 24.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Text(
@@ -278,47 +255,16 @@ fun NearwakeScreen(
             }
         }
         }
-            if (suggestions.isNotEmpty()) {
-                Box(
-                    Modifier
-                        .zIndex(2f)
-                        .padding(top = searchHeight + 8.dp)
-                        .fillMaxWidth()
-                        .heightIn(max = 380.dp)
-                        .shadow(10.dp, RoundedCornerShape(16.dp))
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White),
-                ) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 28.dp)
-                            .heightIn(max = 348.dp)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        suggestions.forEach { item ->
-                            Column(
-                                Modifier.fillMaxWidth().clickable {
-                                    scope.launch {
-                                        val place = store.pickPlace(item) ?: return@launch
-                                        onOpenMap(place, false)
-                                    }
-                                }.padding(horizontal = 16.dp, vertical = 10.dp),
-                            ) {
-                                Text(item.name, fontFamily = PromptFamily, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (item.detail.isNotBlank()) Text(item.detail, fontFamily = PromptFamily, fontSize = 12.sp, color = Muted2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
+            PlaceSuggestionMenu(
+                items = suggestions,
+                onPick = { item ->
+                    scope.launch {
+                        val place = store.pickPlace(item) ?: return@launch
+                        onOpenMap(place, false)
                     }
-                    Text(
-                        placeProviderLabel(suggestions.first().source),
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 8.dp),
-                        fontFamily = PromptFamily,
-                        fontSize = 11.sp,
-                        color = Color(0xFFE6B000),
-                    )
-                }
-            }
+                },
+                modifier = Modifier.zIndex(2f).padding(top = searchHeight + 8.dp),
+            )
         }
     }
 }
@@ -386,16 +332,6 @@ private fun PlaceRow(
     }
 }
 
-private fun placeProviderLabel(source: String): String {
-    val name = when (source.lowercase()) {
-        "longdo" -> "Longdo"
-        "ggmap", "google" -> "Google"
-        "osm" -> "OpenStreetMap"
-        else -> source.trim()
-    }
-    return if (name.isBlank()) "Support by" else "Support by $name"
-}
-
 private fun placeIcon(name: String): ImageVector {
     val text = name.lowercase()
     return when {
@@ -430,6 +366,8 @@ fun NearwakeMapScreen(
     var compass by remember { mutableIntStateOf(0) }
     val suggestions = rememberPlaceSuggestions(store, query)
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var searchBlockHeight by remember { mutableStateOf(0.dp) }
     val tracking = state.tracking
     val maxRadius = Plans.radiusMax(state.planCode)
     val snapped = Plans.snapRadius(radius, state.planCode)
@@ -537,10 +475,11 @@ fun NearwakeMapScreen(
         }
 
         val current = dest
+        Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+        Column(Modifier.fillMaxSize()) {
         if (current != null) {
             Row(
                 Modifier
-                    .padding(horizontal = 16.dp)
                     .padding(bottom = 12.dp)
                     .shadow(8.dp, RoundedCornerShape(22.dp), ambientColor = Color(0x1428508C), spotColor = Color(0x1428508C))
                     .clip(RoundedCornerShape(22.dp))
@@ -563,62 +502,17 @@ fun NearwakeMapScreen(
                 )
             }
         } else {
-            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp).zIndex(2f)) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(22.dp), ambientColor = Color(0x1428508C), spotColor = Color(0x1428508C))
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Color.White)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = Primary, modifier = Modifier.size(20.dp))
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        textStyle = TextStyle(fontFamily = PromptFamily, fontSize = 16.sp, color = Ink),
-                        modifier = Modifier.weight(1f).padding(start = 12.dp),
-                        decorationBox = { inner ->
-                            Box {
-                                if (query.isEmpty()) Text(t("mapSearchHint"), fontFamily = PromptFamily, fontSize = 16.sp, color = Hint2)
-                                inner()
-                            }
-                        },
-                    )
-                }
-                if (suggestions.isNotEmpty()) {
-                    Column(
-                        Modifier
-                            .padding(top = 8.dp)
-                            .fillMaxWidth()
-                            .heightIn(max = 220.dp)
-                            .shadow(10.dp, RoundedCornerShape(16.dp), ambientColor = Color(0x1F28508C), spotColor = Color(0x1F28508C))
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        suggestions.forEach { item ->
-                            Column(
-                                Modifier.fillMaxWidth().clickable {
-                                    scope.launch {
-                                        val place = store.pickPlace(item) ?: return@launch
-                                        applyDestination(place)
-                                        when (item.source) {
-                                            "longdo" -> store.toast(t("mapResolvedWithLongdo"))
-                                            "google" -> store.toast(t("mapResolvedWithGoogle"))
-                                            "nearwake" -> store.toast(t("mapResolvedFromNearwake"))
-                                        }
-                                    }
-                                }.padding(horizontal = 16.dp, vertical = 10.dp),
-                            ) {
-                                Text(item.name, fontFamily = PromptFamily, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (item.detail.isNotBlank()) Text(item.detail, fontFamily = PromptFamily, fontSize = 12.sp, color = Muted2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                } else {
+            Column(
+                Modifier
+                    .padding(bottom = 12.dp)
+                    .onGloballyPositioned { searchBlockHeight = with(density) { it.size.height.toDp() } },
+            ) {
+                PlaceSearchField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = t("mapSearchHint"),
+                )
+                if (suggestions.isEmpty()) {
                     Text(
                         t("mapLongPressHint"),
                         modifier = Modifier.padding(start = 4.dp, top = 8.dp),
@@ -633,7 +527,6 @@ fun NearwakeMapScreen(
         Box(
             Modifier
                 .weight(1f)
-                .padding(horizontal = 16.dp)
                 .padding(bottom = 12.dp)
                 .clip(RoundedCornerShape(22.dp)),
         ) {
@@ -682,6 +575,25 @@ fun NearwakeMapScreen(
                     Icon(Icons.Outlined.MyLocation, contentDescription = null, tint = Color(0xFF3A4350), modifier = Modifier.size(20.dp))
                 }
             }
+        }
+        }
+        if (current == null) {
+            PlaceSuggestionMenu(
+                items = suggestions,
+                onPick = { item ->
+                    scope.launch {
+                        val place = store.pickPlace(item) ?: return@launch
+                        applyDestination(place)
+                        when (item.source) {
+                            "longdo" -> store.toast(t("mapResolvedWithLongdo"))
+                            "google" -> store.toast(t("mapResolvedWithGoogle"))
+                            "nearwake" -> store.toast(t("mapResolvedFromNearwake"))
+                        }
+                    }
+                },
+                modifier = Modifier.zIndex(3f).padding(top = (searchBlockHeight - 4.dp).coerceAtLeast(0.dp)),
+            )
+        }
         }
 
         if (current != null) {

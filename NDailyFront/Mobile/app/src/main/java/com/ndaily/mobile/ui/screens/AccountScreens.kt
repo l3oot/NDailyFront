@@ -44,11 +44,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.ndaily.mobile.data.AppStore
 import com.ndaily.mobile.data.AppUiState
 import com.ndaily.mobile.data.Geo
@@ -125,11 +127,21 @@ fun AccountScreen(
                         PrimaryButton(t("createAccount"), onClick = onWelcome, color = PrimaryAlt)
                     } else {
                         Row(verticalAlignment = Alignment.Top) {
+                            val pictureUrl = state.session?.pictureUrl
                             Box(
                                 Modifier.size(72.dp).clip(CircleShape).background(Color(0x1F4A89EA)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Icon(Icons.Outlined.Person, contentDescription = null, tint = PrimaryAlt, modifier = Modifier.size(40.dp))
+                                if (!pictureUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = pictureUrl,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(72.dp).clip(CircleShape),
+                                    )
+                                } else {
+                                    Icon(Icons.Outlined.Person, contentDescription = null, tint = PrimaryAlt, modifier = Modifier.size(40.dp))
+                                }
                             }
                             Spacer(Modifier.size(14.dp))
                             Column(Modifier.weight(1f)) {

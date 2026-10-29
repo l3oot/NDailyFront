@@ -20,14 +20,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocalTaxi
 import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Navigation
 import androidx.compose.material.icons.outlined.Schedule
@@ -49,24 +50,32 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.ndaily.mobile.data.AppStore
 import com.ndaily.mobile.data.AppUiState
 import com.ndaily.mobile.data.DrivingRoute
 import com.ndaily.mobile.data.Geo
 import com.ndaily.mobile.data.LatLng
-import com.ndaily.mobile.data.PlaceSuggestion
 import com.ndaily.mobile.data.TaxiFare
-import com.ndaily.mobile.data.TaxiFareBand
 import com.ndaily.mobile.ui.components.Chevron
 import com.ndaily.mobile.ui.components.DailyDialog
+import com.ndaily.mobile.ui.components.DailySwitch
 import com.ndaily.mobile.ui.components.PageBack
+import com.ndaily.mobile.ui.components.PlaceSuggestionMenu
 import com.ndaily.mobile.ui.components.rememberPlaceSuggestions
+import com.ndaily.mobile.ui.map.MapPins
 import com.ndaily.mobile.ui.map.OsmMap
 import com.ndaily.mobile.ui.theme.Ink
 import com.ndaily.mobile.ui.theme.Muted
@@ -80,6 +89,7 @@ private val PageBg = Color(0xFFF5F7FB)
 private val CardLine = Color(0xFFE6EAF0)
 private val SoftBlue = Color(0xFFEAF3FF)
 private val Gold = Color(0xFFF5B942)
+private val GrabGreen = Color(0xFF00B14F)
 private val PinRed = Color(0xFFFF4D6D)
 
 @Composable
@@ -98,18 +108,30 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var gpsError by remember { mutableStateOf("") }
     var rateOpen by remember { mutableStateOf(false) }
+    var traffic by remember { mutableStateOf("") }
+    var optApp by remember { mutableStateOf(false) }
+    var optAirport by remember { mutableStateOf(false) }
     var overview by remember { mutableIntStateOf(0) }
     var recenter by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     val here = t("taxiFareOriginMyLocation")
     val originSuggestions = rememberPlaceSuggestions(store, if (editOrigin) originText else "")
     val destSuggestions = rememberPlaceSuggestions(store, if (editDest) destText else "")
+    val suggestionItems = when {
+        editOrigin -> originSuggestions
+        editDest -> destSuggestions
+        else -> emptyList()
+    }
+    var odBoxHeightPx by remember { mutableIntStateOf(0) }
+    var odBoxWidthPx by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(state.gps) {
         val gps = state.gps ?: return@LaunchedEffect
         if (!originLocked && origin == null) {
             origin = gps
             originText = here
+            recenter++
         }
     }
 
@@ -142,8 +164,17 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
     }
 
     val km = route?.distanceKm
-    val band = km?.let { TaxiFare.estimateBand(it) }
     val minutes = km?.let { timeRange(route?.durationSeconds, it) }
+    val taxiFare = km?.takeIf { !loading }?.let { distance ->
+        TaxiFare.compute(
+            distanceKm = distance,
+            trafficMinutes = traffic.toIntOrNull() ?: 0,
+            appBookingSurcharge = optApp,
+            airportSurcharge = optAirport,
+        )
+    }
+    val grabFare = km?.takeIf { !loading }?.let { TaxiFare.computeGrab(it) }
+    val fare = if (selected == "grab") grabFare else taxiFare
 
     Box(Modifier.fillMaxSize().background(PageBg)) {
         Column(
@@ -173,107 +204,137 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
                 }
             }
 
-            Column(
+            Box(
                 Modifier
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp)
-                    .shadow(8.dp, RoundedCornerShape(22.dp))
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color.White)
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                    .fillMaxWidth()
+                    .onGloballyPositioned {
+                        odBoxHeightPx = it.size.height
+                        odBoxWidthPx = it.size.width
+                    },
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(Primary))
-                        Spacer(Modifier.height(4.dp))
-                        repeat(3) {
-                            Box(Modifier.padding(vertical = 2.dp).size(3.dp).clip(CircleShape).background(Color(0xFFD0D5DD)))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .shadow(8.dp, RoundedCornerShape(22.dp))
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color.White)
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(Primary))
+                            Spacer(Modifier.height(4.dp))
+                            repeat(3) {
+                                Box(Modifier.padding(vertical = 2.dp).size(3.dp).clip(CircleShape).background(Color(0xFFD0D5DD)))
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = PinRed, modifier = Modifier.size(18.dp))
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = PinRed, modifier = Modifier.size(18.dp))
-                    }
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        PlaceLine(
-                            text = originText,
-                            editing = editOrigin,
-                            placeholder = t("taxiFareOrigin"),
-                            onEdit = {
-                                editOrigin = true
-                                editDest = false
-                                originLocked = true
-                                if (originText == here) originText = ""
-                            },
-                            onChange = {
-                                originText = it
-                                origin = null
-                                editOrigin = true
-                                originLocked = true
-                                gpsError = ""
-                            },
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        PlaceLine(
-                            text = destText,
-                            editing = editDest,
-                            placeholder = t("taxiFareDestination"),
-                            onEdit = {
-                                editDest = true
-                                editOrigin = false
-                            },
-                            onChange = {
-                                destText = it
-                                dest = null
-                                editDest = true
-                            },
-                            onClear = if (dest != null) {
-                                {
-                                    dest = null
-                                    destText = ""
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            PlaceLine(
+                                text = originText,
+                                editing = editOrigin,
+                                placeholder = t("taxiFareOrigin"),
+                                onEdit = {
+                                    editOrigin = true
                                     editDest = false
-                                }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                    Box(
-                        Modifier
-                            .padding(start = 8.dp)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable {
-                                val nextOrigin = dest
-                                val nextOriginText = destText
-                                dest = origin
-                                destText = if (originText == here) here else originText
-                                origin = nextOrigin
-                                originText = nextOriginText
-                                editOrigin = false
-                                editDest = false
-                                originLocked = true
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Outlined.SwapVert, contentDescription = null, tint = Color(0xFF98A2B3), modifier = Modifier.size(22.dp))
+                                    originLocked = true
+                                    if (originText == here) originText = ""
+                                },
+                                onChange = {
+                                    originText = it
+                                    origin = null
+                                    editOrigin = true
+                                    originLocked = true
+                                    gpsError = ""
+                                },
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            PlaceLine(
+                                text = destText,
+                                editing = editDest,
+                                placeholder = t("taxiFareDestination"),
+                                onEdit = {
+                                    editDest = true
+                                    editOrigin = false
+                                },
+                                onChange = {
+                                    destText = it
+                                    dest = null
+                                    editDest = true
+                                },
+                                onClear = if (dest != null) {
+                                    {
+                                        dest = null
+                                        destText = ""
+                                        editDest = false
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                        Box(
+                            Modifier
+                                .padding(start = 8.dp)
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    val nextOrigin = dest
+                                    val nextOriginText = destText
+                                    dest = origin
+                                    destText = if (originText == here) here else originText
+                                    origin = nextOrigin
+                                    originText = nextOriginText
+                                    editOrigin = false
+                                    editDest = false
+                                    originLocked = true
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Outlined.SwapVert, contentDescription = null, tint = Color(0xFF98A2B3), modifier = Modifier.size(22.dp))
+                        }
                     }
                 }
-            }
 
-            SuggestionList(if (editOrigin) originSuggestions else destSuggestions) { item ->
-                scope.launch {
-                    val place = store.pickPlace(item) ?: return@launch
-                    val point = LatLng(place.lat, place.lng)
-                    if (editOrigin) {
-                        origin = point
-                        originText = place.name
-                        editOrigin = false
-                        originLocked = true
-                    } else {
-                        dest = point
-                        destText = place.name
-                        editDest = false
+                if (suggestionItems.isNotEmpty() && odBoxWidthPx > 0) {
+                    val gapPx = with(density) { 8.dp.roundToPx() }
+                    Popup(
+                        alignment = Alignment.TopStart,
+                        offset = IntOffset(0, odBoxHeightPx + gapPx),
+                        properties = PopupProperties(
+                            focusable = false,
+                            clippingEnabled = false,
+                            dismissOnClickOutside = true,
+                        ),
+                        onDismissRequest = {
+                            editOrigin = false
+                            editDest = false
+                        },
+                    ) {
+                        PlaceSuggestionMenu(
+                            items = suggestionItems,
+                            modifier = Modifier.width(with(density) { odBoxWidthPx.toDp() }),
+                        ) { item ->
+                            scope.launch {
+                                val place = store.pickPlace(item) ?: return@launch
+                                val point = LatLng(place.lat, place.lng)
+                                if (editOrigin) {
+                                    origin = point
+                                    originText = place.name
+                                    editOrigin = false
+                                    originLocked = true
+                                } else {
+                                    dest = point
+                                    destText = place.name
+                                    editDest = false
+                                }
+                                gpsError = ""
+                            }
+                        }
                     }
-                    gpsError = ""
                 }
             }
 
@@ -285,28 +346,38 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ServiceCard(t("taxiFareTaxiName"), Icons.Outlined.LocalTaxi, selected == "taxi", Modifier.weight(1f)) { selected = "taxi" }
-                ServiceCard(t("taxiFareOtherShort"), Icons.Outlined.MoreHoriz, selected == "other", Modifier.weight(1f)) { selected = "other" }
+                ServiceCard(t("taxiFareTaxiName"), Icons.Outlined.LocalTaxi, selected == "taxi", Modifier.weight(1f)) {
+                    selected = "taxi"
+                }
+                ServiceCard(t("taxiFareGrabShort"), Icons.Outlined.DirectionsCar, selected == "grab", Modifier.weight(1f)) {
+                    selected = "grab"
+                }
             }
 
-            if (origin != null && dest != null) {
-                Box(
-                    Modifier
-                        .padding(horizontal = 16.dp)
-                        .fillMaxWidth()
-                        .height(210.dp)
-                        .shadow(8.dp, RoundedCornerShape(22.dp))
-                        .clip(RoundedCornerShape(22.dp)),
-                ) {
-                    OsmMap(
-                        modifier = Modifier.fillMaxSize(),
-                        gps = origin,
-                        dest = dest,
-                        path = route?.path ?: listOfNotNull(origin, dest),
-                        pathColor = 0xFF3B82F6.toInt(),
-                        overviewToken = overview,
-                        recenterToken = recenter,
-                    )
+            Box(
+                Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .shadow(8.dp, RoundedCornerShape(22.dp))
+                    .clip(RoundedCornerShape(22.dp)),
+            ) {
+                OsmMap(
+                    modifier = Modifier.fillMaxSize(),
+                    gps = state.gps,
+                    origin = origin,
+                    dest = dest,
+                    path = when {
+                        route?.path?.isNotEmpty() == true -> route!!.path
+                        origin != null && dest != null -> listOf(origin!!, dest!!)
+                        else -> emptyList()
+                    },
+                    pathColor = 0xFF3B82F6.toInt(),
+                    pins = MapPins.Taxi,
+                    overviewToken = overview,
+                    recenterToken = recenter,
+                )
+                if (origin != null && dest != null) {
                     Row(
                         Modifier
                             .align(Alignment.TopStart)
@@ -319,61 +390,129 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
                         Icon(Icons.Outlined.Navigation, contentDescription = null, tint = Primary, modifier = Modifier.size(14.dp))
                         Text(t("taxiFareRouteBadge"), modifier = Modifier.padding(start = 4.dp), fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Ink)
                     }
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(12.dp)
-                            .size(40.dp)
-                            .shadow(4.dp, CircleShape)
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .clickable {
-                                val gps = state.gps
-                                if (gps == null) gpsError = t("taxiFareGpsError")
-                                else {
-                                    origin = gps
-                                    originText = here
-                                    editOrigin = false
-                                    originLocked = true
-                                    gpsError = ""
-                                    recenter++
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Outlined.MyLocation, contentDescription = t("mapMyLocation"), tint = Ink, modifier = Modifier.size(18.dp))
-                    }
                 }
-
-                if (loading) {
-                    Text(t("taxiFareRouteLoading"), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontFamily = PromptFamily, fontSize = 12.sp, color = Muted)
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .size(40.dp)
+                        .shadow(4.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .clickable {
+                            val gps = state.gps
+                            if (gps == null) gpsError = t("taxiFareGpsError")
+                            else {
+                                origin = gps
+                                originText = here
+                                editOrigin = false
+                                originLocked = true
+                                gpsError = ""
+                                recenter++
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.MyLocation, contentDescription = t("mapMyLocation"), tint = Ink, modifier = Modifier.size(18.dp))
                 }
-                if (fallback) {
-                    Text(t("taxiFareRouteFallback"), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontFamily = PromptFamily, fontSize = 12.sp, color = Color(0xFF9A3412))
-                }
-
                 if (km != null && minutes != null) {
                     Row(
                         Modifier
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .align(Alignment.BottomCenter)
+                            .padding(10.dp)
                             .fillMaxWidth()
-                            .shadow(6.dp, RoundedCornerShape(20.dp))
-                            .clip(RoundedCornerShape(20.dp))
+                            .shadow(6.dp, RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(16.dp))
                             .background(Color.White)
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        StatCell(Icons.Outlined.LocalTaxi, t("taxiFareDistanceLabel"), "${"%.1f".format(km)} ${t("taxiFareKm")}", Modifier.weight(1f))
-                        Box(Modifier.width(1.dp).height(36.dp).background(CardLine))
-                        StatCell(Icons.Outlined.AccessTime, t("taxiFareTimeLabel"), "${minutes.first} - ${minutes.second} ${t("taxiFareMinuteUnit")}", Modifier.weight(1f))
+                        StatCell(
+                            Icons.Outlined.LocalTaxi,
+                            t("taxiFareDistanceLabel"),
+                            "${"%.1f".format(km)} ${t("taxiFareKm")}",
+                            Modifier.weight(1f),
+                        )
+                        Box(Modifier.width(1.dp).height(32.dp).background(CardLine))
+                        StatCell(
+                            Icons.Outlined.AccessTime,
+                            t("taxiFareTimeLabel"),
+                            "${minutes.first} - ${minutes.second} ${t("taxiFareMinuteUnit")}",
+                            Modifier.weight(1f),
+                        )
                     }
                 }
             }
 
-            if (band != null) {
+            if (loading) {
+                Text(t("taxiFareRouteLoading"), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontFamily = PromptFamily, fontSize = 12.sp, color = Muted)
+            }
+            if (fallback) {
+                Text(t("taxiFareRouteFallback"), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontFamily = PromptFamily, fontSize = 12.sp, color = Color(0xFF9A3412))
+            }
+
+            if (selected == "taxi") {
                 Column(
                     Modifier
                         .padding(horizontal = 16.dp)
+                        .padding(top = 12.dp)
+                        .fillMaxWidth()
+                        .shadow(6.dp, RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White)
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                ) {
+                    Text(t("taxiFareTraffic"), fontFamily = PromptFamily, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = Muted)
+                    BasicTextField(
+                        value = traffic,
+                        onValueChange = { next -> traffic = next.filter { it.isDigit() } },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = TextStyle(fontFamily = PromptFamily, fontSize = 16.sp, color = Ink),
+                        cursorBrush = SolidColor(Primary),
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, CardLine, RoundedCornerShape(12.dp))
+                            .background(Color.White)
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                    )
+                    Text(
+                        t("taxiFareTrafficHelp"),
+                        modifier = Modifier.padding(top = 6.dp),
+                        fontFamily = PromptFamily,
+                        fontSize = 12.sp,
+                        color = Muted,
+                    )
+                    OptionSwitchRow(
+                        label = t("taxiFareOptApp"),
+                        checked = optApp,
+                        onToggle = { optApp = !optApp },
+                    )
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(CardLine))
+                    OptionSwitchRow(
+                        label = t("taxiFareOptAirport"),
+                        checked = optAirport,
+                        onToggle = { optAirport = !optAirport },
+                    )
+                }
+            } else {
+                Text(
+                    t("taxiFareGrabTrafficNote"),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    fontFamily = PromptFamily,
+                    fontSize = 12.sp,
+                    color = Muted,
+                    lineHeight = 18.sp,
+                )
+            }
+
+            if (taxiFare != null || grabFare != null) {
+                Column(
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 12.dp)
                         .fillMaxWidth()
                         .shadow(6.dp, RoundedCornerShape(22.dp))
                         .clip(RoundedCornerShape(22.dp))
@@ -388,21 +527,61 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
                         title = t("taxiFareTaxiName"),
                         subtitle = t("taxiFareMetered"),
                         subtitleColor = Primary,
-                        price = bahtSpan(band.taxiLow, band.taxiHigh),
+                        price = taxiFare?.let { "฿${TaxiFare.money(it.totalBaht)}" } ?: "—",
                         selected = selected == "taxi",
                         onClick = { selected = "taxi" },
                     )
                     FareOption(
-                        icon = Icons.Outlined.MoreHoriz,
-                        iconBg = Color(0xFFEEF2F6),
-                        iconTint = Color(0xFF667085),
-                        title = t("taxiFareOtherName"),
-                        subtitle = t("taxiFareOtherHint"),
-                        subtitleColor = Muted,
-                        price = bahtSpan(band.otherLow, band.otherHigh),
-                        selected = selected == "other",
-                        onClick = { selected = "other" },
+                        icon = Icons.Outlined.DirectionsCar,
+                        iconBg = GrabGreen,
+                        iconTint = Color.White,
+                        title = t("taxiFareGrabName"),
+                        subtitle = t("taxiFareGrabHint"),
+                        subtitleColor = GrabGreen,
+                        price = grabFare?.let { "฿${TaxiFare.money(it.totalBaht)}" } ?: "—",
+                        selected = selected == "grab",
+                        onClick = { selected = "grab" },
                     )
+                }
+            }
+
+            fare?.let { detail ->
+                Column(
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 12.dp)
+                        .fillMaxWidth()
+                        .shadow(6.dp, RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White)
+                        .border(1.dp, Primary.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                ) {
+                    Text(t("taxiFareBreakdown"), fontFamily = PromptFamily, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Ink)
+                    Box(Modifier.padding(vertical = 12.dp).fillMaxWidth().height(1.dp).background(CardLine))
+                    detail.distanceLines.forEach { line ->
+                        BreakdownRow(line.label, "${TaxiFare.money(line.amountBaht)} ${t("taxiFareBaht")}")
+                    }
+                    if (detail.trafficBaht > 0) {
+                        BreakdownRow(t("taxiFareTrafficCharge"), "${TaxiFare.money(detail.trafficBaht)} ${t("taxiFareBaht")}")
+                    }
+                    if (detail.appSurcharge > 0) {
+                        BreakdownRow(t("taxiFareSurchargeApp"), "${TaxiFare.money(detail.appSurcharge)} ${t("taxiFareBaht")}")
+                    }
+                    if (detail.airportSurcharge > 0) {
+                        BreakdownRow(t("taxiFareSurchargeAirport"), "${TaxiFare.money(detail.airportSurcharge)} ${t("taxiFareBaht")}")
+                    }
+                    Box(Modifier.padding(vertical = 12.dp).fillMaxWidth().height(1.dp).background(CardLine))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(t("taxiFareTotal"), fontFamily = PromptFamily, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                        Text(
+                            "${TaxiFare.money(detail.totalBaht)} ${t("taxiFareBaht")}",
+                            fontFamily = PromptFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = Primary,
+                        )
+                    }
                 }
             }
 
@@ -411,8 +590,21 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
                     Icon(Icons.Outlined.Info, contentDescription = null, tint = Muted, modifier = Modifier.size(16.dp))
                     Text(t("taxiFareNoteTitle"), modifier = Modifier.padding(start = 6.dp), fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Ink)
                 }
-                NoteLine(t("taxiFareNoteApprox"))
-                NoteLine(t("taxiFareNoteDepends"))
+                if (selected == "grab") {
+                    NoteLine(t("taxiFareNoteApprox"))
+                    NoteLine(t("taxiFareGrabTrafficNote"))
+                } else {
+                    NoteLine(t("taxiFareNoteExact"))
+                    NoteLine(t("taxiFareNoteDepends"))
+                }
+                Text(
+                    t("taxiFareDisclaimer"),
+                    modifier = Modifier.padding(top = 8.dp),
+                    fontFamily = PromptFamily,
+                    fontSize = 12.sp,
+                    color = Muted,
+                    lineHeight = 18.sp,
+                )
                 Text(
                     "${t("planUsageRemaining")} ${state.taxiUsed}/${store.taxiQuota()} ${t("planTimesUnit")}",
                     modifier = Modifier.padding(top = 10.dp),
@@ -425,6 +617,35 @@ fun TaxiScreen(state: AppUiState, store: AppStore, onBack: () -> Unit) {
         if (rateOpen) {
             DailyDialog(t("taxiFareRateDetails"), t("taxiFareRateIntro"), t("ok"), onConfirm = { rateOpen = false }, confirmColor = Primary)
         }
+    }
+}
+
+@Composable
+private fun OptionSwitchRow(label: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+            fontFamily = PromptFamily,
+            fontSize = 14.sp,
+            color = Ink,
+        )
+        DailySwitch(checked = checked, onToggle = onToggle)
+    }
+}
+
+@Composable
+private fun BreakdownRow(label: String, amount: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, modifier = Modifier.weight(1f).padding(end = 12.dp), fontFamily = PromptFamily, fontSize = 13.sp, color = Muted)
+        Text(amount, fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Ink)
     }
 }
 
@@ -477,30 +698,6 @@ private fun PlaceLine(
                 tint = Color(0xFF98A2B3),
                 modifier = Modifier.padding(start = 8.dp).size(18.dp).clickable(onClick = onClear),
             )
-        }
-    }
-}
-
-@Composable
-private fun SuggestionList(items: List<PlaceSuggestion>, onPick: (PlaceSuggestion) -> Unit) {
-    if (items.isEmpty()) return
-    Column(
-        Modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(16.dp))
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White),
-    ) {
-        items.take(4).forEach { item ->
-            Column(
-                Modifier.fillMaxWidth().clickable { onPick(item) }.padding(horizontal = 14.dp, vertical = 10.dp),
-            ) {
-                Text(item.name, fontFamily = PromptFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (item.detail.isNotBlank()) {
-                    Text(item.detail, fontFamily = PromptFamily, fontSize = 12.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
         }
     }
 }
@@ -591,5 +788,3 @@ private fun timeRange(durationSeconds: Int?, km: Double): Pair<Int, Int> {
     val high = (base * 1.4).roundToInt().coerceAtLeast(base + 1)
     return base to high
 }
-
-private fun bahtSpan(low: Int, high: Int) = "฿${"%,d".format(low)} - ${"%,d".format(high)}"

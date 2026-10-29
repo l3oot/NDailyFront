@@ -39,11 +39,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.ndaily.mobile.R
 import com.ndaily.mobile.data.AppStore
 import com.ndaily.mobile.data.AppUiState
@@ -92,6 +94,7 @@ fun HomeScreen(
                     )
                     Text(t("welcomeLead"), fontFamily = PromptFamily, fontSize = 15.sp, color = Muted2, modifier = Modifier.padding(top = 2.dp))
                 }
+                val pictureUrl = state.session?.pictureUrl
                 Box(
                     Modifier
                         .padding(top = 4.dp)
@@ -101,7 +104,16 @@ fun HomeScreen(
                         .clickable(onClick = onAccount),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Outlined.Person, contentDescription = t("accountTitle"), tint = Color(0xFF9AA3AE), modifier = Modifier.size(24.dp))
+                    if (!pictureUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = pictureUrl,
+                            contentDescription = t("accountTitle"),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(44.dp).clip(CircleShape),
+                        )
+                    } else {
+                        Icon(Icons.Outlined.Person, contentDescription = t("accountTitle"), tint = Color(0xFF9AA3AE), modifier = Modifier.size(24.dp))
+                    }
                 }
             }
             Spacer(Modifier.height(20.dp))

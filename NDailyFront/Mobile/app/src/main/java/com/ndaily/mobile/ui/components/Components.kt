@@ -11,10 +11,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +30,9 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -122,17 +129,17 @@ fun AppFooter(
     onHome: () -> Unit,
     onSettings: () -> Unit,
 ) {
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
-            .navigationBarsPadding(),
+            .background(Color.White),
     ) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEEF1F4)))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp),
+                .height(48.dp + bottomInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FooterTab(
@@ -162,8 +169,8 @@ private fun RowScope.FooterTab(
     Column(
         modifier = Modifier
             .weight(1f)
-            .clickable(onClick = onClick)
-            .fillMaxWidth(),
+            .fillMaxHeight()
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -367,17 +374,31 @@ fun PrimaryButton(
 
 @Composable
 fun DailySwitch(checked: Boolean, color: Color = Primary, onToggle: () -> Unit) {
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 22.dp else 2.dp,
+        animationSpec = tween(180),
+        label = "dailySwitch",
+    )
     Box(
         modifier = Modifier
             .width(48.dp)
             .height(28.dp)
-            .clip(CircleShape)
-            .background(if (checked) color else Color(0xFFD1D1D6))
-            .clickable(onClick = onToggle)
-            .padding(2.dp),
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.size(24.dp).clip(CircleShape).background(Color.White).shadow(2.dp, CircleShape))
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(percent = 50))
+                .background(if (checked) color else Color(0xFFD1D1D6)),
+        )
+        Box(
+            Modifier
+                .offset(x = thumbOffset)
+                .size(24.dp)
+                .shadow(2.dp, CircleShape, clip = false)
+                .background(Color.White, CircleShape),
+        )
     }
 }
 
