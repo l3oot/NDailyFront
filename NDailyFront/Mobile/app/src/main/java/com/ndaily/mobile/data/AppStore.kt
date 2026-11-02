@@ -2,8 +2,11 @@ package com.ndaily.mobile.data
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import com.ndaily.mobile.data.api.ApiClient
 import com.ndaily.mobile.data.api.ApiResult
 import com.ndaily.mobile.data.api.TokenStore
@@ -15,13 +18,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
 
-class AppStore(app: Application) {
+class AppStore(private val app: Application) {
     private val prefs = app.getSharedPreferences("ndaily.frontend", Context.MODE_PRIVATE)
     private val tokens = TokenStore(app)
     private val api = ApiClient(tokens)
+    private val alarm = NearAlarm(app)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private val clearToast = Runnable { update { copy(toast = "") } }
@@ -30,10 +37,20 @@ class AppStore(app: Application) {
     private val _googleTicket = MutableStateFlow("")
     val googleTicket: StateFlow<String> = _googleTicket.asStateFlow()
 
+    init {
+        val s = _state.value
+        alarm.configure(s.notifyVibration, s.notifySound)
+    }
+
     fun t(key: String) = LocalStringsHolder.t(_state.value.locale, key)
 
     fun setLocale(locale: AppLocale) {
         update { copy(locale = locale) }
+        persistLocal()
+    }
+
+    fun setDistanceUnit(unit: DistanceUnit) {
+        update { copy(distanceUnit = unit) }
         persistLocal()
     }
 
@@ -362,41 +379,148 @@ class AppStore(app: Application) {
                 notifySound = sound ?: notifySound,
             )
         }
+        val s = _state.value
+        alarm.configure(s.notifyVibration, s.notifySound)
+        persistLocal()
+    }
+
+    suspend fun saveParkSpot(spot: ParkSpot): Boolean {
+        if (!_state.value.loggedIn) {
+            applyLocalParkSpot(spot)
+            toast(t("parkSaved"))
+            return true
+        }
+        val photo = withContext(Dispatchers.IO) { encodeParkPhoto(spot.photoPath) }
+        val res = api.post(
+            "/api/v1/park/spot",
+            JSONObject()
+                .put("parkSpotUuid", spot.id)
+                .put("label", spot.label)
+                .put("place", spot.place)
+                .put("zone", spot.zone)
+                .put("floor", spot.floor)
+                .put("pillar", spot.pillar)
+                .put("lat", spot.lat)
+                .put("lng", spot.lng)
+                .put("photo", photo),
+        )
+        val data = res.obj()
+        if (!res.ok || data == null) {
+            toast(res.message.ifBlank { t("cannotReachServer") })
+            return false
+        }
+        val saved = parseParkSpotDto(data) ?: spot
+        applyLocalParkSpot(saved)
+        toast(t("parkSaved"))
+        return true
+    }
+
+    suspend fun deleteParkSpot(id: String): Boolean {
+        val previous = _state.value.parkSpots.firstOrNull { it.id == id }
+        if (_state.value.loggedIn) {
+            val res = api.delete("/api/v1/park/spot/$id")
+            if (!res.ok) {
+                toast(res.message.ifBlank { t("cannotReachServer") })
+                return false
+            }
+        }
+        if (previous?.photoPath.orEmpty().isNotBlank()) {
+            runCatching { File(previous!!.photoPath).takeIf { it.exists() }?.delete() }
+        }
+        update { copy(parkSpots = parkSpots.filterNot { it.id == id }) }
+        persistLocal()
+        toast(t("parkCleared"))
+        return true
+    }
+
+    suspend fun loadParkSpots() {
+        if (!_state.value.loggedIn) return
+        val res = api.get("/api/v1/park/spot")
+        val rows = res.arr() ?: return
+        val spots = buildList {
+            for (i in 0 until rows.length()) {
+                parseParkSpotDto(rows.optJSONObject(i) ?: continue)?.let { add(it) }
+            }
+        }.sortedByDescending { it.savedAt }
+        update { copy(parkSpots = spots) }
         persistLocal()
     }
 
     fun setGps(point: LatLng?, denied: Boolean = false) {
-        update {
-            val nextTracking = tracking?.let { track ->
-                val away = point?.let { Geo.distanceMeters(it, LatLng(track.dest.lat, track.dest.lng)) }
-                track.copy(metersAway = away)
-            }
-            copy(gps = point, gpsDenied = denied, tracking = nextTracking)
+        val current = _state.value
+        val track = current.tracking
+        if (track == null || point == null) {
+            update { copy(gps = point, gpsDenied = denied, tracking = tracking?.copy(metersAway = null)) }
+            return
         }
+        val away = Geo.distanceMeters(point, LatLng(track.dest.lat, track.dest.lng))
+        val inside = away <= track.radiusMeters
+        val next = applyGeofenceTransition(track, inside).copy(metersAway = away, inside = inside)
+        update { copy(gps = point, gpsDenied = denied, tracking = next) }
     }
 
     fun startTracking(dest: SavedPlace, radiusMeters: Int, fromFavorite: Boolean) {
         scope.launch {
             if (!consumeNearwake()) return@launch
-            update {
-                copy(
-                    tracking = TrackingState(
-                        dest = dest,
-                        radiusMeters = radiusMeters,
-                        fromFavorite = fromFavorite,
-                        metersAway = gps?.let { Geo.distanceMeters(it, LatLng(dest.lat, dest.lng)) },
-                    ),
-                )
-            }
+            val point = _state.value.gps
+            val away = point?.let { Geo.distanceMeters(it, LatLng(dest.lat, dest.lng)) }
+            val inside = away != null && away <= radiusMeters
+            val seed = TrackingState(
+                dest = dest,
+                radiusMeters = radiusMeters,
+                fromFavorite = fromFavorite,
+                metersAway = away,
+                inside = false,
+            )
+            val next = applyGeofenceTransition(seed, inside, forceEnterIfInside = true)
+                .copy(metersAway = away, inside = inside)
+            update { copy(tracking = next) }
         }
     }
 
     fun stopTracking() {
+        alarm.stop()
         update { copy(tracking = null) }
     }
 
     fun setTrackingRadius(meters: Int) {
-        update { copy(tracking = tracking?.copy(radiusMeters = meters)) }
+        val track = _state.value.tracking ?: return
+        val away = track.metersAway
+        val inside = away != null && away <= meters
+        val next = applyGeofenceTransition(track.copy(radiusMeters = meters), inside)
+            .copy(metersAway = away, radiusMeters = meters, inside = inside)
+        update { copy(tracking = next) }
+    }
+
+    private fun applyGeofenceTransition(
+        track: TrackingState,
+        inside: Boolean,
+        forceEnterIfInside: Boolean = false,
+    ): TrackingState {
+        val wasInside = track.inside
+        val entered = inside && (!wasInside || forceEnterIfInside)
+        val exited = !inside && wasInside
+        return when {
+            !track.notifyOnExit && entered -> {
+                alarm.configure(_state.value.notifyVibration, _state.value.notifySound)
+                alarm.start(t("mapAlarmTitle"), "${t("mapAlarmEnterBody")}${track.dest.name}")
+                track.copy(alarming = true, inside = inside)
+            }
+            !track.notifyOnExit && exited -> {
+                alarm.stop()
+                track.copy(alarming = false, inside = inside)
+            }
+            track.notifyOnExit && exited -> {
+                alarm.configure(_state.value.notifyVibration, _state.value.notifySound)
+                alarm.start(t("mapAlarmExitTitle"), "${t("mapAlarmExitBody")}${track.dest.name}")
+                track.copy(alarming = true, inside = inside)
+            }
+            track.notifyOnExit && entered -> {
+                alarm.stop()
+                track.copy(alarming = false, inside = inside)
+            }
+            else -> track.copy(inside = inside)
+        }
     }
 
     fun taxiQuota() = Plans.of(_state.value.planCode).taxiQuota
@@ -448,6 +572,7 @@ class AppStore(app: Application) {
         val plans = api.get("/api/v1/plans")
         applyPlan(plans.obj())
         loadPlaces()
+        loadParkSpots()
     }
 
     private fun applySession(session: UserSession) {
@@ -607,25 +732,155 @@ class AppStore(app: Application) {
 
     private fun persistLocal() {
         val s = _state.value
-        prefs.edit()
+        val editor = prefs.edit()
             .putString("locale", s.locale.name)
+            .putString("distanceUnit", s.distanceUnit.name)
             .putString("savedToilets", JSONArray(s.savedToiletIds.toList()).toString())
             .putBoolean("notifyVibration", s.notifyVibration)
             .putBoolean("notifySound", s.notifySound)
-            .apply()
+        val spots = JSONArray()
+        s.parkSpots.forEach { spot -> spots.put(parkSpotJson(spot)) }
+        editor.putString("parkSpots", spots.toString()).remove("parkSpot").apply()
     }
 
     private fun loadLocal(): AppUiState {
         val locale = runCatching {
             AppLocale.valueOf(prefs.getString("locale", AppLocale.Th.name)!!)
         }.getOrDefault(AppLocale.Th)
+        val distanceUnit = runCatching {
+            DistanceUnit.valueOf(prefs.getString("distanceUnit", DistanceUnit.Km.name)!!)
+        }.getOrDefault(DistanceUnit.Km)
         return AppUiState(
             locale = locale,
+            distanceUnit = distanceUnit,
             toilets = emptyList(),
             savedToiletIds = readIds(prefs.getString("savedToilets", null)),
+            parkSpots = readParkSpots(prefs),
             notifyVibration = prefs.getBoolean("notifyVibration", true),
             notifySound = prefs.getBoolean("notifySound", true),
         )
+    }
+
+    private fun parkSpotJson(spot: ParkSpot) = JSONObject()
+        .put("id", spot.id)
+        .put("label", spot.label)
+        .put("place", spot.place)
+        .put("zone", spot.zone)
+        .put("floor", spot.floor)
+        .put("pillar", spot.pillar)
+        .put("lat", spot.lat)
+        .put("lng", spot.lng)
+        .put("photoPath", spot.photoPath)
+        .put("savedAt", spot.savedAt)
+
+    private fun parseParkSpot(row: JSONObject): ParkSpot? = runCatching {
+        ParkSpot(
+            id = row.optString("id").ifBlank { "park_${row.optLong("savedAt", System.currentTimeMillis())}" },
+            label = row.optString("label"),
+            place = row.optString("place"),
+            zone = row.optString("zone"),
+            floor = row.optString("floor"),
+            pillar = row.optString("pillar"),
+            lat = row.optDouble("lat"),
+            lng = row.optDouble("lng"),
+            photoPath = row.optString("photoPath"),
+            savedAt = row.optLong("savedAt", System.currentTimeMillis()),
+        )
+    }.getOrNull()
+
+    private fun readParkSpots(prefs: android.content.SharedPreferences): List<ParkSpot> {
+        val rawList = prefs.getString("parkSpots", null)
+        if (!rawList.isNullOrBlank()) {
+            return runCatching {
+                val arr = JSONArray(rawList)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        parseParkSpot(arr.optJSONObject(i) ?: continue)?.let { add(it) }
+                    }
+                }.sortedByDescending { it.savedAt }
+            }.getOrDefault(emptyList())
+        }
+        val legacy = prefs.getString("parkSpot", null) ?: return emptyList()
+        return listOfNotNull(runCatching { parseParkSpot(JSONObject(legacy)) }.getOrNull())
+    }
+
+    private fun applyLocalParkSpot(spot: ParkSpot) {
+        val existing = _state.value.parkSpots.firstOrNull { it.id == spot.id }
+        val previousPhoto = existing?.photoPath.orEmpty()
+        if (previousPhoto.isNotBlank() && previousPhoto != spot.photoPath) {
+            runCatching { File(previousPhoto).takeIf { it.exists() }?.delete() }
+        }
+        update {
+            val next = parkSpots.filterNot { it.id == spot.id } + spot
+            copy(parkSpots = next.sortedByDescending { it.savedAt })
+        }
+        persistLocal()
+    }
+
+    private fun parseParkSpotDto(row: JSONObject): ParkSpot? = runCatching {
+        val id = row.optString("parkSpotUuid").ifBlank { row.optString("id") }
+        if (id.isBlank()) return null
+        val photo = row.optString("photo").ifBlank { row.optString("parkPhoto") }
+        val photoPath = if (photo.startsWith("data:image/")) {
+            materializeParkPhoto(id, photo)
+        } else {
+            ""
+        }
+        val savedAtRaw = row.optString("savedAt")
+        val savedAt = savedAtRaw.toLongOrNull()
+            ?: runCatching { java.time.Instant.parse(savedAtRaw).toEpochMilli() }.getOrNull()
+            ?: row.optLong("savedAt", System.currentTimeMillis())
+        ParkSpot(
+            id = id,
+            label = row.optString("label"),
+            place = row.optString("place").ifBlank { row.optString("parkPlace") },
+            zone = row.optString("zone"),
+            floor = row.optString("floor"),
+            pillar = row.optString("pillar"),
+            lat = row.optDouble("lat"),
+            lng = row.optDouble("lng"),
+            photoPath = photoPath,
+            savedAt = savedAt,
+        )
+    }.getOrNull()
+
+    private fun parkPhotoDir() = File(app.cacheDir, "park_photos").apply { mkdirs() }
+
+    private fun encodeParkPhoto(path: String): String {
+        if (path.isBlank()) return ""
+        if (path.startsWith("data:image/")) return path.take(550_000)
+        val file = File(path)
+        if (!file.exists()) return ""
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        var sample = 1
+        while (
+            (bounds.outWidth / sample) > 1280 ||
+            (bounds.outHeight / sample) > 1280
+        ) {
+            sample *= 2
+        }
+        val bitmap = BitmapFactory.decodeFile(
+            path,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        ) ?: return ""
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 78, stream)
+        bitmap.recycle()
+        val bytes = stream.toByteArray()
+        val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        if (encoded.length > 520_000) return ""
+        return "data:image/jpeg;base64,$encoded"
+    }
+
+    private fun materializeParkPhoto(id: String, dataUrl: String): String {
+        val b64 = dataUrl.substringAfter("base64,", "")
+        if (b64.isBlank()) return ""
+        return runCatching {
+            val file = File(parkPhotoDir(), "park_$id.jpg")
+            file.writeBytes(Base64.decode(b64, Base64.DEFAULT))
+            file.absolutePath
+        }.getOrDefault("")
     }
 
     private fun readIds(raw: String?): Set<String> {

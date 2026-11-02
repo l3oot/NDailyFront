@@ -37,12 +37,16 @@ import com.ndaily.mobile.data.AppUiState
 import com.ndaily.mobile.data.Geo
 import com.ndaily.mobile.data.SavedPlace
 import com.ndaily.mobile.ui.components.ToastBar
-import com.ndaily.mobile.ui.screens.AccountScreen
 import com.ndaily.mobile.ui.screens.HomeScreen
 import com.ndaily.mobile.ui.screens.LegalScreen
 import com.ndaily.mobile.ui.screens.NearwakeMapScreen
 import com.ndaily.mobile.ui.screens.NearwakeScreen
 import com.ndaily.mobile.ui.screens.NotificationScreen
+import com.ndaily.mobile.ui.screens.ParkSpotFormScreen
+import com.ndaily.mobile.ui.screens.ParkSpotListScreen
+import com.ndaily.mobile.ui.screens.PlanScreen
+import com.ndaily.mobile.ui.screens.ProfileScreen
+import com.ndaily.mobile.ui.screens.SettingsScreen
 import com.ndaily.mobile.ui.screens.SplashScreen
 import com.ndaily.mobile.ui.screens.TaxiScreen
 import com.ndaily.mobile.ui.screens.ToiletFlow
@@ -92,10 +96,10 @@ fun AppNav(store: AppStore, state: AppUiState) {
                 )
             }
             composable("terms") {
-                LegalScreen(t("termsOfServiceTitle"), t("termsBody"), t("welcomeSignIn")) { nav.popBackStack() }
+                LegalScreen(t("termsOfServiceTitle"), t("termsBody"), t("back")) { nav.popBackStack() }
             }
             composable("privacy") {
-                LegalScreen(t("privacyTitle"), t("privacyBody"), t("welcomeSignIn")) { nav.popBackStack() }
+                LegalScreen(t("privacyTitle"), t("privacyBody"), t("back")) { nav.popBackStack() }
             }
             composable("home") {
                 HomeScreen(
@@ -105,10 +109,11 @@ fun AppNav(store: AppStore, state: AppUiState) {
                     onNearwake = { nav.navigate("nearwake") },
                     onToilet = { nav.navigate("toilet") },
                     onTaxi = { nav.navigate("taxi") },
+                    onPark = { nav.navigate("park") },
                 )
             }
             composable("account") {
-                AccountScreen(
+                SettingsScreen(
                     state = state,
                     store = store,
                     onHome = {
@@ -117,8 +122,22 @@ fun AppNav(store: AppStore, state: AppUiState) {
                     onWelcome = {
                         nav.navigate("welcome") { popUpTo(0) { inclusive = true } }
                     },
+                    onProfile = { nav.navigate("profile") },
                     onNotifications = { nav.navigate("notifications") },
+                    onTerms = { nav.navigate("terms") },
+                    onPrivacy = { nav.navigate("privacy") },
                 )
+            }
+            composable("profile") {
+                ProfileScreen(
+                    state = state,
+                    store = store,
+                    onBack = { nav.popBackStack() },
+                    onPlan = { nav.navigate("plan") },
+                )
+            }
+            composable("plan") {
+                PlanScreen(state, store) { nav.popBackStack() }
             }
             composable("notifications") {
                 NotificationScreen(state, store) { nav.popBackStack() }
@@ -168,6 +187,27 @@ fun AppNav(store: AppStore, state: AppUiState) {
             }
             composable("toilet") { ToiletFlow(state, store) { nav.popBackStack() } }
             composable("taxi") { TaxiScreen(state, store) { nav.popBackStack() } }
+            composable("park") {
+                ParkSpotListScreen(
+                    state = state,
+                    store = store,
+                    onBack = { nav.popBackStack() },
+                    onAdd = { nav.navigate("parkForm") },
+                    onOpen = { id -> nav.navigate("parkForm?id=${android.net.Uri.encode(id)}") },
+                )
+            }
+            composable(
+                route = "parkForm?id={id}",
+                arguments = listOf(
+                    navArgument("id") { type = NavType.StringType; defaultValue = "" },
+                ),
+            ) { entry ->
+                val id = entry.arguments?.getString("id").orEmpty().ifBlank { null }
+                ParkSpotFormScreen(state, store, id) { nav.popBackStack() }
+            }
+            composable("parkForm") {
+                ParkSpotFormScreen(state, store, null) { nav.popBackStack() }
+            }
         }
 
         val tracking = state.tracking
@@ -177,7 +217,7 @@ fun AppNav(store: AppStore, state: AppUiState) {
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = 12.dp, end = 12.dp, bottom = if (aboveFooter) 96.dp else 16.dp)
+                    .padding(start = 12.dp, end = 12.dp, bottom = if (aboveFooter) 108.dp else 16.dp)
                     .shadow(12.dp, RoundedCornerShape(16.dp))
                     .clip(RoundedCornerShape(16.dp))
                     .background(CardDark)
@@ -232,7 +272,7 @@ fun AppNav(store: AppStore, state: AppUiState) {
             }
         }
         if (state.toast.isNotBlank()) {
-            ToastBar(state.toast, route == "home" || route == "account")
+            ToastBar(state.toast, route == "home" || route == "account" || route == "profile")
         }
     }
 }

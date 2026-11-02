@@ -2,7 +2,9 @@ package com.ndaily.mobile
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -11,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import com.ndaily.mobile.data.AppStore
 import com.ndaily.mobile.data.LocationTracker
 import com.ndaily.mobile.ui.nav.AppNav
@@ -20,12 +23,17 @@ class MainActivity : ComponentActivity() {
     private lateinit var tracker: LocationTracker
     private var askedPermission = false
     private var promptedLocationSettings = false
+    private var askedNotifyPermission = false
 
     private val permission = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
         if (granted.values.any { it }) beginTracking() else (application as DailyApp).store.setGps(null, true)
     }
+
+    private val notifyPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* alarm still works with vibrate/sound without notification */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,7 +105,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        if (::tracker.isInitialized) tracker.stop()
+        // Keep GPS alive while Nearwake tracking is active so the alarm can fire.
+        val tracking = (application as DailyApp).store.state.value.tracking
+        if (tracking == null && ::tracker.isInitialized) tracker.stop()
     }
 
     private fun beginTracking() {
@@ -110,5 +120,15 @@ class MainActivity : ComponentActivity() {
             return
         }
         tracker.start()
+        maybeAskNotifyPermission()
+    }
+
+    private fun maybeAskNotifyPermission() {
+        if (Build.VERSION.SDK_INT < 33 || askedNotifyPermission) return
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        askedNotifyPermission = true
+        notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }

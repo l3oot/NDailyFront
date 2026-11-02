@@ -21,6 +21,8 @@ data class UserProfile(
 
 enum class AppLocale { Th, En }
 
+enum class DistanceUnit { Km, Mi }
+
 enum class PlanCode { Free, Plus, Pro }
 
 data class PlanInfo(
@@ -90,6 +92,22 @@ data class TrackingState(
     val radiusMeters: Int,
     val fromFavorite: Boolean,
     val metersAway: Double? = null,
+    val inside: Boolean = false,
+    val alarming: Boolean = false,
+    val notifyOnExit: Boolean = false,
+)
+
+data class ParkSpot(
+    val id: String,
+    val label: String = "",
+    val place: String = "",
+    val zone: String,
+    val floor: String,
+    val pillar: String,
+    val lat: Double,
+    val lng: Double,
+    val photoPath: String = "",
+    val savedAt: Long = System.currentTimeMillis(),
 )
 
 data class TaxiFareLine(
@@ -114,6 +132,7 @@ data class TaxiFareResult(
 
 data class AppUiState(
     val locale: AppLocale = AppLocale.Th,
+    val distanceUnit: DistanceUnit = DistanceUnit.Km,
     val ready: Boolean = false,
     val session: UserSession? = null,
     val profile: UserProfile = UserProfile(),
@@ -124,6 +143,7 @@ data class AppUiState(
     val recents: List<SavedPlace> = emptyList(),
     val toilets: List<ToiletLocation> = emptyList(),
     val savedToiletIds: Set<String> = emptySet(),
+    val parkSpots: List<ParkSpot> = emptyList(),
     val notifyVibration: Boolean = true,
     val notifySound: Boolean = true,
     val tracking: TrackingState? = null,

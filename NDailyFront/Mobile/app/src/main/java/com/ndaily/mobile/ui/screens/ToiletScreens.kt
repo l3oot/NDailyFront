@@ -66,6 +66,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -144,6 +145,7 @@ fun ToiletFlow(state: AppUiState, store: AppStore, onBack: () -> Unit) {
         } ?: run { view = "browse" }
         "form" -> ToiletFormScreen(
             store = store,
+            gps = state.gps,
             draft = draft,
             pin = pin,
             error = formError,
@@ -248,12 +250,31 @@ private fun ToiletBrowse(
 
     Column(Modifier.fillMaxSize().background(ToiletBg).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp),
+            Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PageBack(onBack)
-            Spacer(Modifier.weight(1f))
-            ToiletPill(t("toiletAddAction"), Icons.Outlined.Add, onAdd)
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    t("toiletMapTitle"),
+                    fontFamily = PromptFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    t("toiletMapHint"),
+                    fontFamily = PromptFamily,
+                    fontSize = 13.sp,
+                    color = Muted2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            ToiletPill(t("toiletAddShort"), Icons.Outlined.Add, onAdd)
         }
         Box(Modifier.weight(1f)) {
         Column(Modifier.fillMaxSize()) {
@@ -384,7 +405,7 @@ private fun ToiletCard(state: AppUiState, store: AppStore, toilet: ToiletLocatio
     val t = { key: String -> store.t(key) }
     val saved = toilet.toiletUuid in state.savedToiletIds
     val gps = state.gps
-    val distance = gps?.let { Geo.formatToiletDistance(Geo.distanceMeters(it, LatLng(toilet.latitudeToilet, toilet.longitudeToilet)), state.locale) }
+    val distance = gps?.let { Geo.formatToiletDistance(Geo.distanceMeters(it, LatLng(toilet.latitudeToilet, toilet.longitudeToilet)), state.locale, state.distanceUnit) }
     val badge = when {
         isOpenAllDay(toilet.openHoursToilet) -> t("toiletOpen24")
         toilet.cleanToilet -> t("toiletAmenityClean")
@@ -438,7 +459,7 @@ private fun ToiletDetail(state: AppUiState, store: AppStore, toilet: ToiletLocat
     val saved = toilet.toiletUuid in state.savedToiletIds
     val hours = displayHours(toilet.openHoursToilet)
     val gps = state.gps
-    val distance = gps?.let { Geo.formatToiletDistance(Geo.distanceMeters(it, LatLng(toilet.latitudeToilet, toilet.longitudeToilet)), state.locale) }
+    val distance = gps?.let { Geo.formatToiletDistance(Geo.distanceMeters(it, LatLng(toilet.latitudeToilet, toilet.longitudeToilet)), state.locale, state.distanceUnit) }
     val score = starCount(toilet.avgScoreToilet)
     val maps = "https://www.google.com/maps/dir/?api=1&destination=${toilet.latitudeToilet},${toilet.longitudeToilet}"
     fun openMaps() {
@@ -537,6 +558,7 @@ private fun IconBubble(onClick: () -> Unit, content: @Composable () -> Unit) {
 @Composable
 private fun ToiletFormScreen(
     store: AppStore,
+    gps: LatLng?,
     draft: ToiletDraft,
     pin: LatLng,
     error: String,
@@ -578,7 +600,7 @@ private fun ToiletFormScreen(
             FormField(t("toiletAddress"), draft.addressToilet, required = true, placeholder = t("toiletAddressPlaceholder")) { onChange(draft.copy(addressToilet = it)) }
             Text(t("toiletMapPin") + " *", fontFamily = PromptFamily, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             Box(Modifier.fillMaxWidth().height(176.dp).clip(RoundedCornerShape(24.dp)).border(1.dp, Color(0xFFE6EAF0), RoundedCornerShape(24.dp))) {
-                OsmMap(modifier = Modifier.fillMaxSize(), gps = null, pin = pin, pins = MapPins.Toilet, onLongPress = onPin)
+                OsmMap(modifier = Modifier.fillMaxSize(), gps = gps, pin = pin, pins = MapPins.Toilet, onLongPress = onPin)
             }
             Text("${t("toiletCoords")}: ${"%.4f".format(pin.lat)}, ${"%.4f".format(pin.lng)} (${t("toiletPinHint")})", fontFamily = PromptFamily, fontSize = 12.sp, color = Muted)
             FormField(t("toiletOpenHours"), draft.openHoursToilet) { onChange(draft.copy(openHoursToilet = nextOpenHours(draft.openHoursToilet, it))) }

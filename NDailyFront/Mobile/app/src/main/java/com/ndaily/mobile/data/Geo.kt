@@ -68,7 +68,16 @@ object Geo {
         return "$text $kmLabel"
     }
 
-    fun formatToiletDistance(meters: Double, locale: AppLocale): String {
+    fun formatToiletDistance(meters: Double, locale: AppLocale, unit: DistanceUnit = DistanceUnit.Km): String {
+        if (unit == DistanceUnit.Mi) {
+            val miles = meters / 1609.344
+            if (miles < 0.1) {
+                val feet = maxOf(50, (round(meters * 3.28084 / 50) * 50).toInt())
+                return if (locale == AppLocale.Th) "$feet ฟุต" else "$feet ft"
+            }
+            val label = if (miles < 10) "%.1f".format(miles) else round(miles).toInt().toString()
+            return if (locale == AppLocale.Th) "$label ไมล์" else "$label mi"
+        }
         if (meters < 1000) {
             val rounded = maxOf(50, (round(meters / 50) * 50).toInt())
             return if (locale == AppLocale.Th) "$rounded ม." else "$rounded m"

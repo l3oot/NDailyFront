@@ -1,6 +1,5 @@
 package com.ndaily.mobile.ui.screens
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,9 +68,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -201,7 +197,7 @@ fun NearwakeScreen(
         Column(
             Modifier
                 .padding(top = 12.dp, bottom = 16.dp)
-                .height(320.dp)
+                .height(416.dp)
                 .shadow(8.dp, RoundedCornerShape(22.dp))
                 .clip(RoundedCornerShape(22.dp))
                 .background(Color.White),
@@ -447,7 +443,7 @@ fun NearwakeMapScreen(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MapHeaderButton(onBack) { ChevronLeft() }
+            PageBack(onBack)
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(t("nearAlarm"), fontFamily = PromptFamily, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
                 Text(subtitle, fontFamily = PromptFamily, fontSize = 13.sp, color = Muted2, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -754,18 +750,6 @@ fun NearwakeMapScreen(
 @Composable
 private fun MapHeaderButton(onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.size(44.dp).clickable(onClick = onClick), contentAlignment = Alignment.Center) { content() }
-}
-
-@Composable
-private fun ChevronLeft() {
-    Canvas(Modifier.size(24.dp)) {
-        val path = Path().apply {
-            moveTo(size.width * 0.62f, size.height * 0.22f)
-            lineTo(size.width * 0.34f, size.height * 0.5f)
-            lineTo(size.width * 0.62f, size.height * 0.78f)
-        }
-        drawPath(path, Ink, style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round))
-    }
 }
 
 @Composable

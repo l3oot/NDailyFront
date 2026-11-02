@@ -1,8 +1,8 @@
 package com.ndaily.mobile.data
 
-private val thaiMonths = listOf(
-    "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+private val thaiMonthsFull = listOf(
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
 )
 
 fun formatBirthdate(iso: String?, locale: AppLocale): String {
@@ -10,15 +10,22 @@ fun formatBirthdate(iso: String?, locale: AppLocale): String {
     val date = iso.take(10)
     val parts = date.split("-")
     if (parts.size != 3) return "—"
-    val year = parts[0]
+    val year = parts[0].toIntOrNull() ?: return "—"
     val month = parts[1].toIntOrNull() ?: return "—"
     val day = parts[2].toIntOrNull() ?: return "—"
     return if (locale == AppLocale.Th) {
-        "$day ${thaiMonths.getOrNull(month - 1) ?: month} $year"
+        "$day ${thaiMonthsFull.getOrNull(month - 1) ?: month} ${year + 543}"
     } else {
         val names = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
         "${names.getOrNull(month - 1) ?: month} $day, $year"
     }
+}
+
+fun formatThaiMobile(raw: String): String {
+    val digits = raw.filter { it.isDigit() }
+    if (digits.isEmpty()) return "—"
+    if (digits.length != 10) return raw
+    return "${digits.take(3)} ${digits.drop(3).take(3)} ${digits.drop(6)}"
 }
 
 fun nextThaiMobile(current: String, incoming: String): Pair<String, Boolean> {

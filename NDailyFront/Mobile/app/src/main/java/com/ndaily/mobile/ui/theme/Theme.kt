@@ -1,8 +1,10 @@
 package com.ndaily.mobile.ui.theme
 
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 private val Scheme = lightColorScheme(
@@ -18,9 +20,11 @@ private val Scheme = lightColorScheme(
 
 @Composable
 fun DailyTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = Scheme,
-        typography = DailyTypography,
-        content = content,
-    )
+    CompositionLocalProvider(LocalRippleConfiguration provides null) {
+        MaterialTheme(
+            colorScheme = Scheme,
+            typography = DailyTypography,
+            content = content,
+        )
+    }
 }

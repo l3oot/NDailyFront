@@ -82,10 +82,12 @@ fun OsmMap(
             minZoomLevel = 5.0
             maxZoomLevel = 19.0
             controller.setZoom(14.5)
-            controller.setCenter(GeoPoint(Geo.Bangkok.lat, Geo.Bangkok.lng))
+            val start = gps ?: Geo.Bangkok
+            controller.setCenter(GeoPoint(start.lat, start.lng))
             setBackgroundColor(0xFFE7EEF6.toInt())
         }
     }
+    val initialCentered = remember { booleanArrayOf(gps != null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, mapView) {
         mapView.onResume()
@@ -141,11 +143,14 @@ fun OsmMap(
                 pin?.let { map.overlays += art.marker(map, it, art.draftPin()) }
             }
             MapPins.Taxi -> {
-                (origin ?: gps)?.let { map.overlays += art.marker(map, it, art.taxiOrigin()) }
+                gps?.let { map.overlays += art.marker(map, it, art.gpsPuck(0f)) }
+                origin?.takeIf { gps == null || Geo.distanceMeters(it, gps) > 8.0 }?.let {
+                    map.overlays += art.marker(map, it, art.taxiOrigin())
+                }
                 dest?.let { map.overlays += art.marker(map, it, art.taxiDest()) }
             }
             MapPins.Toilet -> {
-                gps?.let { map.overlays += art.marker(map, it, art.toiletGps()) }
+                gps?.let { map.overlays += art.marker(map, it, art.gpsPuck(0f)) }
                 dest?.let { map.overlays += art.marker(map, it, art.draftPin()) }
                 pin?.let { map.overlays += art.marker(map, it, art.draftPin()) }
             }
@@ -165,10 +170,19 @@ fun OsmMap(
         map.invalidate()
     })
 
+    DisposableEffect(gps) {
+        val point = gps
+        if (point != null && !initialCentered[0]) {
+            mapView.controller.animateTo(GeoPoint(point.lat, point.lng))
+            initialCentered[0] = true
+        }
+        onDispose { }
+    }
     DisposableEffect(recenterToken) {
         if (recenterToken > 0) {
             val target = gps ?: dest ?: pin ?: Geo.Bangkok
             mapView.controller.animateTo(GeoPoint(target.lat, target.lng))
+            initialCentered[0] = true
         }
         onDispose { }
     }
@@ -177,6 +191,7 @@ fun OsmMap(
             val points = listOfNotNull(gps, dest, origin, pin).map { GeoPoint(it.lat, it.lng) }
             if (points.size >= 2) {
                 mapView.zoomToBoundingBox(BoundingBox.fromGeoPoints(points), true, 80)
+                initialCentered[0] = true
             }
         }
         onDispose { }
@@ -228,7 +243,6 @@ private class MapPinArt(context: android.content.Context) {
     private val originBitmap by lazy { ringDot(0xFFC33E83.toInt(), 14f) }
     private val taxiOriginBitmap by lazy { ringDot(0xFF34C759.toInt(), 16f) }
     private val taxiDestBitmap by lazy { ringDot(0xFFFF3B30.toInt(), 16f) }
-    private val toiletGpsBitmap by lazy { drawToiletGps() }
 
     fun marker(map: MapView, point: LatLng, icon: PinBitmap): Marker {
         val marker = Marker(map)
@@ -243,7 +257,6 @@ private class MapPinArt(context: android.content.Context) {
     fun originDot() = originBitmap
     fun taxiOrigin() = taxiOriginBitmap
     fun taxiDest() = taxiDestBitmap
-    fun toiletGps() = toiletGpsBitmap
     fun toiletPin() = toiletBitmap
     fun draftPin() = draftBitmap
 
@@ -268,20 +281,20 @@ private class MapPinArt(context: android.content.Context) {
         val key = heading.toInt()
         val cached = puckBitmap
         if (cached != null && puckHeading == key) return cached
-        val size = px(35f).toInt().coerceAtLeast(1)
+        val size = px(42f).toInt().coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val center = size / 2f
-        canvas.drawCircle(center, center, center, paint(0x473B82F6))
+        canvas.drawCircle(center, center, center, paint(0x553B82F6))
         canvas.drawCircle(
             center,
             center + density,
-            px(10f),
+            px(11f),
             paint(0x2E142850).apply { maskFilter = BlurMaskFilter(px(5f), BlurMaskFilter.Blur.NORMAL) },
         )
-        canvas.drawCircle(center, center, px(10f), paint(AndroidColor.WHITE))
+        canvas.drawCircle(center, center, px(11f), paint(AndroidColor.WHITE))
         val arrow = svgPath("M12,2.2 L20.2,20.6 L12,16.6 L3.8,20.6 Z")
-        val scale = px(11f) / 24f
+        val scale = px(12f) / 24f
         arrow.transform(Matrix().apply { setScale(scale, scale) })
         val bounds = RectF()
         arrow.computeBounds(bounds, true)
@@ -294,18 +307,6 @@ private class MapPinArt(context: android.content.Context) {
         puckHeading = key
         puckBitmap = pin
         return pin
-    }
-
-    private fun drawToiletGps(): PinBitmap {
-        val radius = px(13f)
-        val size = (radius * 2f).toInt().coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        val center = size / 2f
-        canvas.drawCircle(center, center, radius, paint(0x474A89EA))
-        canvas.drawCircle(center, center, px(9f), paint(AndroidColor.WHITE))
-        canvas.drawCircle(center, center, px(7f), paint(0xFF4A89EA.toInt()))
-        return PinBitmap(bitmap, 0.5f, 0.5f)
     }
 
     private fun ringDot(color: Int, diameterDp: Float): PinBitmap {

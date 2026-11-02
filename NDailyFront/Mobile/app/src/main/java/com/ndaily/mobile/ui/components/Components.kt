@@ -139,6 +139,7 @@ fun AppFooter(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(top = 12.dp)
                 .height(48.dp + bottomInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -263,7 +264,7 @@ fun ToastBar(text: String, aboveFooter: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(bottom = if (aboveFooter) 112.dp else 24.dp),
+            .padding(bottom = if (aboveFooter) 124.dp else 24.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Text(
